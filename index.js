@@ -25,9 +25,11 @@ function init(options, cb) {
     allowErrors: true,
   }, options || {});
   
-  if (!swig) 
+  if (!swig) {
+    swig = realswig;
     swig.init(options);
-
+  }
+  
   cb(null, render, dummyContext);
 
   function dummyContext(templateName, cb) {
