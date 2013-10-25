@@ -1,4 +1,4 @@
-var swig = require("swig")
+var realswig = require("swig")
   , juiceDocument = require("juice").juiceDocument
   , path = require("path")
   , jsdom = require("jsdom")
@@ -8,11 +8,25 @@ module.exports = init;
 init.createDummyContext = createDummyContext;
 
 function init(options, cb) {
+  var swig;
+  
+  if (options) {
+    if (options.swig)
+      swig = options.swig
+    else if (options.compileFile)
+      swig = options
+    
+    if (swig)
+      options = null;
+  }
+  
   options = extend({
     root: path.join(__dirname, "templates"),
     allowErrors: true,
   }, options || {});
-  swig.init(options);
+  
+  if (!swig) 
+    swig.init(options);
 
   cb(null, render, dummyContext);
 
