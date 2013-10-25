@@ -34,7 +34,7 @@ function init(options, cb) {
 
   function dummyContext(templateName, cb) {
     // compile file into swig template
-    compileTemplate(templateName, function(err, template) {
+    compileTemplate(swig, templateName, function(err, template) {
       if (err) return cb(err);
       // return the tokens
       cb(null, createDummyContext(template));
@@ -47,7 +47,7 @@ function init(options, cb) {
       urlRewriteFn = null;
     }
     // compile file into swig template
-    compileTemplate(templateName, function(err, template) {
+    compileTemplate(swig, templateName, function(err, template) {
       if (err) return cb(err);
       // render template with context
       renderTemplate(template, context, function(err, html) {
@@ -115,7 +115,7 @@ function createJsDomInstance(content, cb) {
   }
 }
 
-function compileTemplate(name, cb) {
+function compileTemplate(swig, name, cb) {
   try {
     cb(null, swig.compileFile(name));
   } catch (err) {
