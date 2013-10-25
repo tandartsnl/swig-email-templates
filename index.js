@@ -1,35 +1,33 @@
-var realswig = require("swig")
-  , juiceDocument = require("juice").juiceDocument
-  , path = require("path")
-  , jsdom = require("jsdom")
+var realswig           = require("swig")
+  , juice              = require("juice")
+  , path               = require("path")
+  , jsdom              = require("jsdom")
   , createDummyContext = require('swig-dummy-context')
 
-module.exports = init;
+module.exports          = init;
 init.createDummyContext = createDummyContext;
 
 function init(options, cb) {
   var swig;
-  
+
   if (options) {
     if (options.swig)
       swig = options.swig
     else if (options.compileFile)
       swig = options
-    
+
     if (swig)
       options = null;
   }
-  
+
   options = extend({
-    root: path.join(__dirname, "templates"),
+    root       : path.join(__dirname, "templates"),
     allowErrors: true,
   }, options || {});
-  
-  if (!swig) {
-    swig = realswig;
-    swig.init(options);
-  }
-  
+
+  if (!swig)
+    (swig = realswig).init(options);
+
   cb(null, render, dummyContext);
 
   function dummyContext(templateName, cb) {
@@ -40,12 +38,28 @@ function init(options, cb) {
       cb(null, createDummyContext(template));
     });
   }
-    
-  function render(templateName, context, urlRewriteFn, cb) {
-    if (! cb) {
-      cb = urlRewriteFn;
-      urlRewriteFn = null;
+
+  function render(templateName, context, css, urlRewriteFn, cb) {
+    switch (arguments.length) {
+      case 3:
+        cb           = css;
+        css          = null;
+        urlRewriteFn = null;
+        break;
+
+      case 4:
+        cb           = urlRewriteFn;
+
+        if (typeof css === 'function') {
+          urlRewriteFn = css;
+          css          = null;
+        } else {
+          urlRewriteFn = null;
+        }
+
+        break;
     }
+
     // compile file into swig template
     compileTemplate(swig, templateName, function(err, template) {
       if (err) return cb(err);
@@ -53,10 +67,7 @@ function init(options, cb) {
       renderTemplate(template, context, function(err, html) {
         if (err) return cb(err);
         createJsDomInstance(html, function(err, document) {
-          if (err) return cb(err);
-          if (urlRewriteFn) rewriteUrls(document, urlRewriteFn);
-          var fileUrl = "file://" + path.resolve(process.cwd(), path.join(options.root, templateName));
-          juiceDocument(document, { url: fileUrl }, function(err) {
+          var done = function(err) {
             if (err) {
               // free the associated memory
               // with lazily created parentWindow
@@ -67,15 +78,22 @@ function init(options, cb) {
               tryCleanup();
               cb(null, inner);
             }
+
             function tryCleanup() {
-              try {
-                document.parentWindow.close();
-              } catch (cleanupErr) {}
-              try {
-                document.close();
-              } catch (cleanupErr) {}
+              try { document.parentWindow.close(); } catch (e) {}
+              try { document.close();              } catch (e) {}
             }
-          });
+          };
+
+          if (err) return cb(err);
+          if (urlRewriteFn) rewriteUrls(document, urlRewriteFn);
+
+          if (css) {
+            juice.inlineDocument(document, css);
+            done();
+          } else {
+            juice.juiceDocument(document, { url: "file://" + path.resolve(process.cwd(), path.join(options.root, templateName)) }, done);
+          }
         });
       });
     });
@@ -83,13 +101,18 @@ function init(options, cb) {
 }
 
 function rewriteUrls(document, rewrite, cb) {
-  var anchorList = document.getElementsByTagName("a");
-  for (var i = 0; i < anchorList.length; ++i) {
-    var anchor = anchorList[i];
-    for (var j = 0; j < anchor.attributes.length; ++j) {
-      var attr = anchor.attributes[j];
+  var i, l, j, k, anchorList, attrs, attr;
+
+  anchorList = document.getElementsByTagName("a");
+
+  for (i = 0, l = anchorList.length; i < l; i += 1) {
+    attrs = anchorList[i].attributes;
+
+    for (j = 0, k = attrs.length; j < k; j += 1) {
+      attr = attrs[j];
+
       if (attr.name.toLowerCase() === 'href') {
-        anchor.setAttribute(attr.name, rewrite(attr.value));
+        anchorList[i].setAttribute(attr.name, rewrite(attr.value));
         break;
       }
     }
@@ -99,40 +122,25 @@ function rewriteUrls(document, rewrite, cb) {
 function createJsDomInstance(content, cb) {
   // hack to force jsdom to see this argument as html content, not a url
   // or a filename. https://github.com/tmpvar/jsdom/issues/554
-  var html = content + "\n";
+  var html    = content + "\n";
   var options = {
-    features: {
-      QuerySelector: ['1.0'],
-      FetchExternalResources: false,
+    features  : {
+      QuerySelector           : ['1.0'],
+      FetchExternalResources  : false,
       ProcessExternalResources: false,
-      MutationEvents: false,
+      MutationEvents          : false,
     },
   };
-  try {
-    cb(null, jsdom.html(html, null, options));
-  } catch (err) {
-    cb(err);
-  }
+
+  try { cb(null, jsdom.html(html, null, options)); } catch (e) { cb(e); }
 }
 
-function compileTemplate(swig, name, cb) {
-  try {
-    cb(null, swig.compileFile(name));
-  } catch (err) {
-    cb(err);
-  }
-}
+function compileTemplate(swig, name, cb)        { try { cb(null, swig.compileFile(name));   } catch (e) { cb(e); } }
+function renderTemplate (template, context, cb) { try { cb(null, template.render(context)); } catch (e) { cb(e); } }
 
-function renderTemplate(template, context, cb) {
-  try {
-    cb(null, template.render(context));
-  } catch (err) {
-    cb(err);
-  }
-}
-
-var owns = {}.hasOwnProperty;
 function extend(obj, src) {
-  for (var key in src) if (owns.call(src, key)) obj[key] = src[key];
+  for (var key in src)
+    if (src.hasOwnProperty(key)) obj[key] = src[key];
+
   return obj;
 }
